@@ -1,0 +1,22 @@
+name: Test CUDA on Ubuntu
+
+on: [push]
+
+jobs:
+  test-cuda:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+      
+      - name: Install CUDA Toolkit
+        run: |
+          sudo apt update
+          sudo apt install -y nvidia-cuda-toolkit
+          nvcc --version
+      
+      - name: Run CUDA Test
+        run: |
+          echo 'int main() { return 0; }' > test.cu
+          nvcc -o test test.cu
+          ./test
