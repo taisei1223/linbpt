@@ -62,6 +62,9 @@ jobs:
     steps:
     - uses: actions/checkout@v3
 
+    - name: Grant execute permission for install_cuda_ubuntu.sh
+      run: chmod +x ./scripts/actions/install_cuda_ubuntu.sh
+
     - name: Install CUDA
       env:
         cuda: ${{ matrix.cuda }}
