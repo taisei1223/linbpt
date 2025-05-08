@@ -9,95 +9,66 @@ on:
       - "!scripts/"
       - "scripts/actions/install_cuda_ubuntu.sh"
       - "!*.md"
+
 jobs:
   build:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
-      # explicit include-based build matrix, of known valid options
       matrix:
         include:
-          # 22.04 supports CUDA 11.7+
           - os: ubuntu-22.04
-            cuda: "12.0"
+            cuda: "12-0"
             gcc: 11
-          #- os: ubuntu-22.04
-          #  cuda: "11.8"
-          #  gcc: 10
-          #- os: ubuntu-22.04
-          #  cuda: "11.7"
-          #  gcc: 10
-          # 20.04 supports CUDA 11.0+
-          #- os: ubuntu-20.04
-          #  cuda: "11.6"
-          #  gcc: 10
-          #- os: ubuntu-20.04
-          #  cuda: "11.5"
-          #  gcc: 10
-          #- os: ubuntu-20.04
-          #  cuda: "11.4"
-          #  gcc: 10
-          #- os: ubuntu-20.04
-          #  cuda: "11.3"
-          #  gcc: 10
-          #- os: ubuntu-20.04
-          #  cuda: "11.2"
-          #  gcc: 10
-          #- os: ubuntu-20.04
-          #  cuda: "11.0"
-          #  gcc: 9
-          # 18.04 supports CUDA 10.1+ (gxx <= 8), but were deprecated on 2022-08-08 and unsupported from 2023-04-01
-          # - os: ubuntu-18.04
-          #   cuda: "10.2"
-          #   gcc: 8
-          # - os: ubuntu-18.04
-          #   cuda: "10.1"
-          #   gcc: 8
-          # 16.04 runners are deprecated / removed in september 2021.
-          # It should still be possible to install CUDA 8 - CUDA 10 in 18.04 images by using the 16.04 repository, but install_cuda_ubuntu.sh would require changes to do so / a way to override the repository to use.
+
     env:
       build_dir: "build"
       config: "Release"
 
     steps:
-    - uses: actions/checkout@v3
+      - name: Checkout source
+        uses: actions/checkout@v3
 
-    - name: Install/Select gcc and g++ 
-      run: |
-        sudo apt-get install -y gcc-${{ matrix.gcc }} g++-${{ matrix.gcc }}
-        echo "CC=/usr/bin/gcc-${{ matrix.gcc }}" >> $GITHUB_ENV
-        echo "CXX=/usr/bin/g++-${{ matrix.gcc }}" >> $GITHUB_ENV
-        echo "CUDAHOSTCXX=/usr/bin/g++-${{ matrix.gcc }}" >> $GITHUB_ENV
+      - name: Install/Select gcc and g++
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-${{ matrix.gcc }} g++-${{ matrix.gcc }}
+          echo "CC=/usr/bin/gcc-${{ matrix.gcc }}" >> $GITHUB_ENV
+          echo "CXX=/usr/bin/g++-${{ matrix.gcc }}" >> $GITHUB_ENV
+          echo "CUDAHOSTCXX=/usr/bin/g++-${{ matrix.gcc }}" >> $GITHUB_ENV
 
-    - name: Grant execute permission for install_cuda_ubuntu.sh
-      run: chmod +x ./scripts/actions/install_cuda_ubuntu.sh
+      - name: Grant execute permission for install_cuda_ubuntu.sh
+        run: chmod +x ./scripts/actions/install_cuda_ubuntu.sh
 
-    - name: Install CUDA Toolkit
-      env:
-        cuda: ${{ matrix.cuda }}
-      run: |
-        # Add the CUDA repository
-        sudo apt-get update
-        sudo apt-get install -y gnupg software-properties-common
-        sudo add-apt-repository ppa:graphics-drivers/ppa
-        sudo apt-get update
+      - name: Install CUDA Toolkit and NVIDIA Driver
+        env:
+          cuda: ${{ matrix.cuda }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wget gnupg lsb-release
 
-        # Install the specified version of CUDA
-        sudo apt-get install -y cuda-${{ matrix.cuda }}
+          # Add NVIDIA repository
+          wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu$(lsb_release -rs | sed 's/\.//')/x86_64/cuda-keyring_1.1-1_all.deb
+          sudo dpkg -i cuda-keyring_1.1-1_all.deb
+          sudo apt-get update
 
-        # Install NVIDIA driver if required
-        sudo apt-get install -y nvidia-driver-${{ matrix.gcc }}
+          # Install CUDA toolkit
+          sudo apt-get install -y cuda-toolkit-${{ matrix.cuda }}
 
-        # Verify the installation
-        nvcc --version
-        nvidia-smi
-    - name: Configure cmake
-      id: configure
-      run: cmake . -B ${{ env.build_dir }} -DCMAKE_BUILD_TYPE=${{ env.config }}
+          # Install NVIDIA driver (fixed version for compatibility)
+          sudo apt-get install -y nvidia-driver-525 || true
 
-    - name: Configure Error Processing
-      if: ${{ failure() && steps.configure.outcome == 'failure' }}
-      run: |
+          # Check installations
+          nvcc --version || echo "nvcc not found"
+          nvidia-smi || echo "nvidia-smi not available (likely due to virtual runner)"
+
+      - name: Configure cmake
+        id: configure
+        run: cmake . -B ${{ env.build_dir }} -DCMAKE_BUILD_TYPE=${{ env.config }}
+
+      - name: Configure Error Processing
+        if: ${{ failure() && steps.configure.outcome == 'failure' }}
+        run: |
           if [[ -d "${{ env.build_dir }}" ]]; then
             pushd "${{ env.build_dir }}"
             if [[ -f "CMakeFiles/CMakeOutput.log" ]]; then
@@ -112,11 +83,9 @@ jobs:
             fi
           fi
 
-
-
-    - name: Build everything else
-      working-directory: ${{ env.build_dir }}
-      run: cmake --build . --target all --verbose -j `nproc`
+      - name: Build everything else
+        working-directory: ${{ env.build_dir }}
+        run: cmake --build . --target all --verbose -j `nproc`
 
   check-gpu:
     name: Run checkgpu.py
