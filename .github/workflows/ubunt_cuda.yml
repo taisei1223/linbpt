@@ -62,16 +62,6 @@ jobs:
     steps:
     - uses: actions/checkout@v3
 
-    - name: Grant execute permission for install_cuda_ubuntu.sh
-      run: chmod +x ./scripts/actions/install_cuda_ubuntu.sh
-
-    - name: Install CUDA
-      env:
-        cuda: ${{ matrix.cuda }}
-      run: ./scripts/actions/install_cuda_ubuntu.sh
-      shell: bash
-
-    # Specify the correct host compilers
     - name: Install/Select gcc and g++ 
       run: |
         sudo apt-get install -y gcc-${{ matrix.gcc }} g++-${{ matrix.gcc }}
@@ -79,6 +69,28 @@ jobs:
         echo "CXX=/usr/bin/g++-${{ matrix.gcc }}" >> $GITHUB_ENV
         echo "CUDAHOSTCXX=/usr/bin/g++-${{ matrix.gcc }}" >> $GITHUB_ENV
 
+    - name: Grant execute permission for install_cuda_ubuntu.sh
+      run: chmod +x ./scripts/actions/install_cuda_ubuntu.sh
+
+    - name: Install CUDA Toolkit
+      env:
+        cuda: ${{ matrix.cuda }}
+      run: |
+        # Add the CUDA repository
+        sudo apt-get update
+        sudo apt-get install -y gnupg software-properties-common
+        sudo add-apt-repository ppa:graphics-drivers/ppa
+        sudo apt-get update
+
+        # Install the specified version of CUDA
+        sudo apt-get install -y cuda-${{ matrix.cuda }}
+
+        # Install NVIDIA driver if required
+        sudo apt-get install -y nvidia-driver-${{ matrix.gcc }}
+
+        # Verify the installation
+        nvcc --version
+        nvidia-smi
     - name: Configure cmake
       id: configure
       run: cmake . -B ${{ env.build_dir }} -DCMAKE_BUILD_TYPE=${{ env.config }}
